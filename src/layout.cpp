@@ -154,14 +154,17 @@ static Layout layoutfor(View v)
         f32 handtop = H - 24 - handw*CARDASPECT;
         f32 top     = 152;  // below the header
         f32 cy      = top + (handtop - 230 - top)*0.55f + 40;
-        L.cw = 150*k;
+        f32 grow    = clampf((H - 1667)/500, 0, 1);  // a phone's spare height
+        f32 tcw     = 150 + 20*grow;
+        f32 dy      = 122 + 28*grow;
+        L.cw = tcw*k;
         L.hw = handw*k;
         L.bw = 74*k;
         L.hlift = 30*k;
-        L.trick[SOUTH] = upt(&L, cx, cy+122);
-        L.trick[NORTH] = upt(&L, cx, cy-122);
-        L.trick[WEST]  = upt(&L, cx-165, cy);
-        L.trick[EAST]  = upt(&L, cx+165, cy);
+        L.trick[SOUTH] = upt(&L, cx, cy+dy);
+        L.trick[NORTH] = upt(&L, cx, cy-dy);
+        L.trick[WEST]  = upt(&L, cx-165-10*grow, cy);
+        L.trick[EAST]  = upt(&L, cx+165+10*grow, cy);
         L.kitty = upt(&L, cx, cy);
 
         f32 ny = top + 20 + 74*CARDASPECT/2;
@@ -186,9 +189,10 @@ static Layout layoutfor(View v)
         L.score    = urect(&L, 12, 12, 420, 128);
         L.menu     = urect(&L, W-12-100, 12, 100, 100);
         L.trumpbox = urect(&L, 444, 12, W-12-100-12-444, 128);
-        f32 below  = cy + 122 + 105;
-        L.prompty  = (cy + 105 + 24)*k + L.safe.y;
-        L.bidbar   = urect(&L, 24, cy+105+90, W-48, 100);
+        f32 half   = tcw*CARDASPECT/2;
+        f32 below  = cy + dy + half;
+        L.prompty  = (cy + half + 24)*k + L.safe.y;
+        L.bidbar   = urect(&L, 24, cy+half+90, W-48, 100);
         L.playpromptY = (below + 18)*k + L.safe.y;
 
         L.tsmall = 26*k;

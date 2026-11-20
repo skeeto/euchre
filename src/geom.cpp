@@ -47,6 +47,7 @@ struct Draw {
     Font  *font;
     Xform  t;
     f32    alpha = 1;   // multiplies every color's alpha
+    f32    pxscale;     // pixels per unit for text sizes; 0: from t
     Color  red;         // suit symbols in text: hearts and diamonds
     Color  black;       // clubs and spades; zero alpha: the text color
 };

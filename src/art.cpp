@@ -172,7 +172,8 @@ static void drawcard(Draw *d, i32 c, Place p, i32 trump)
         return;
     }
     Draw cd = withxf(d, placexf(p.x, p.y, p.rot, s*sx, s));
-    cd.alpha = d->alpha * p.alpha;
+    cd.alpha   = d->alpha * p.alpha;
+    cd.pxscale = s * xfscale(d->t);
     if (p.glow > 0.01f) {
         Draw g = withxf(d, placexf(p.x, p.y, p.rot, s, s));
         g.alpha = cd.alpha * p.glow;

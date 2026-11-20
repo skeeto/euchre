@@ -80,7 +80,10 @@ struct Font {
     b32              baked[NBUCKETS];
     stbtt_packedchar chars[NBUCKETS][95];
     b32              used[NBUCKETS];  // asked for this frame
+    b32              recent[NBUCKETS];  // asked for by the last frame lacking one
+    b32              want[NBUCKETS];  // to add at the next rebake
     b32              missing;         // a size used this frame isn't baked
+    b32              pending;         // a rebake is wanted
     i64              bakedat;         // when, for pacing rebakes
 };
 
@@ -103,9 +106,11 @@ static i32 bucketof(f32 px)
     return k;
 }
 
-// Bake the given buckets; ones that don't fit are left unbaked.
-static void bake(Font *f, b32 *want, Arena scratch)
+// Bake the given buckets; ones that don't fit are left unbaked. Returns
+// whether all fit.
+static b32 bake(Font *f, b32 *want, Arena scratch)
 {
+    b32 all = 1;
     fillbytes(f->baked, 0, sizeof(f->baked));
     u8 *alpha = allocbytes(&scratch, (iz)ATLAS_W*ATLAS_H);
     fillbytes(alpha, 0, (iz)ATLAS_W*ATLAS_H);
@@ -122,6 +127,8 @@ static void bake(Font *f, b32 *want, Arena scratch)
         f32 height = bucketpx(k) / f->capratio;
         if (stbtt_PackFontRange(&pc, interttf, 0, height, 32, 95, f->chars[k])) {
             f->baked[k] = 1;
+        } else {
+            all = 0;
         }
     }
     stbtt_PackEnd(&pc);
@@ -143,6 +150,7 @@ static void bake(Font *f, b32 *want, Arena scratch)
         }
     }
     f->version++;
+    return all;
 }
 
 static Font *newfont(Arena *perm)
@@ -236,17 +244,25 @@ static f32 textpx(Font *f, f32 px)
     return fitsize(f, px).px;
 }
 
+// Pixels per local unit for choosing text sizes. A card mid-flip is
+// squeezed, but its text keeps the size of the card unsqueezed, so a
+// flip doesn't run through a series of baked sizes.
+static f32 textscale(Draw *d)
+{
+    return d->pxscale>0 ? d->pxscale : xfscale(d->t);
+}
+
 // Width of text in a Draw's local units.
 static f32 textwidthd(Draw *d, f32 px, Str s)
 {
-    f32 ps = xfscale(d->t);
+    f32 ps = textscale(d);
     return textwidth(d->font, px*ps, s) / ps;
 }
 
 // Cap height actually drawn, in a Draw's local units.
 static f32 textpxd(Draw *d, f32 px)
 {
-    f32 ps = xfscale(d->t);
+    f32 ps = textscale(d);
     return textpx(d->font, px*ps) / ps;
 }
 
@@ -254,7 +270,7 @@ static f32 textpxd(Draw *d, f32 px)
 static void text(Draw *d, f32 x, f32 y, f32 px, Color col, Str s)
 {
     Font *f    = d->font;
-    f32   ps   = xfscale(d->t);
+    f32   ps   = textscale(d);
     Fit   fit  = fitsize(f, px*ps);
     f32   sc   = fit.scale / ps;  // baked pixels to local units
     f32   cap  = fit.px / ps;
@@ -378,28 +394,54 @@ static i32 wraptext(Font *f, f32 px, f32 maxw, Str s, Str *lines, i32 max)
     return n;
 }
 
-enum : i32 {
-    FONT_OK,       // every size the frame used is baked
-    FONT_REBAKED,  // the atlas changed: draw the frame again
-    FONT_PENDING,  // a rebake is due after the returned delay
-};
+// Rebakes happen only between frames, before a frame is drawn, never
+// after: a frame's glyph quads point into the atlas as it was when they
+// were made, and the platform uploads the atlas once the frame is done.
+// A rebake keeps every size already baked, so sizes passed through by
+// an animation (a card flipping or shrinking away) accumulate instead
+// of reshuffling the atlas frame after frame. Only when they no longer
+// fit does it start over from what the last frame used.
 
-// After a frame: rebake the atlas to hold every size the frame used, at
-// most every so often (a window being resized asks for new sizes on
-// every frame), then start a fresh slate for the next frame.
-static i32 fontupdate(Font *f, i64 now, Arena scratch)
+// After a frame: note sizes it lacked, then start a fresh slate.
+// Returns whether a rebake is wanted.
+static b32 fontupdate(Font *f)
 {
-    i32 r = FONT_OK;
     if (f->missing) {
-        if (!f->version || now-f->bakedat>=150) {
-            bake(f, f->used, scratch);
-            f->bakedat = now;
-            r = FONT_REBAKED;
-        } else {
-            r = FONT_PENDING;
+        f->pending = 1;
+        for (i32 k = 0; k < NBUCKETS; k++) {
+            f->want[k] |= f->used[k];
+            f->recent[k] = f->used[k];
         }
     }
     f->missing = 0;
     fillbytes(f->used, 0, sizeof(f->used));
-    return r;
+    return f->pending;
+}
+
+// When the next rebake may happen: at most every so often, since a
+// window being resized asks for new sizes on every frame.
+static i64 fontdue(Font *f)
+{
+    return f->version ? f->bakedat + 150 : 0;
+}
+
+// Before a frame: rebake if one is wanted and due. Returns whether the
+// atlas changed.
+static b32 fontprepare(Font *f, i64 now, Arena scratch)
+{
+    if (!f->pending || now<fontdue(f)) {
+        return 0;
+    }
+    b32 want[NBUCKETS];
+    for (i32 k = 0; k < NBUCKETS; k++) {
+        want[k] = f->want[k] | f->baked[k];
+    }
+    if (!bake(f, want, scratch)) {
+        // Full: start over with just what's in use
+        bake(f, f->recent, scratch);
+    }
+    f->bakedat = now;
+    f->pending = 0;
+    fillbytes(f->want, 0, sizeof(f->want));
+    return 1;
 }

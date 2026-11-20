@@ -496,11 +496,24 @@ static b32 sameview(View a, View b)
            a.inset[1]==b.inset[1] && a.inset[2]==b.inset[2] && a.inset[3]==b.inset[3];
 }
 
+// Before drawing: any rebake the last frame asked for, so this frame's
+// glyphs and the atlas the platform uploads after it agree.
+static void startframe(App *a)
+{
+    fontprepare(a->font, a->now, a->scratch);
+}
+
+// After drawing: if text was missing a size, another frame once the
+// rebake is due.
 static void finishframe(App *a)
 {
-    switch (fontupdate(a->font, a->now, a->scratch)) {
-    case FONT_REBAKED: a->redraw = 1; break;
-    case FONT_PENDING: a->fontwake = a->font->bakedat + 160; break;
+    if (fontupdate(a->font)) {
+        i64 due = fontdue(a->font);
+        if (due <= a->now) {
+            a->redraw = 1;
+        } else {
+            a->fontwake = due;
+        }
     }
 }
 
@@ -520,6 +533,7 @@ static Mesh apprender(App *a, View v, i64 now)
     }
     a->nhits = 0;
     updatesprites(a, snap);
+    startframe(a);
 
     Draw d = newdraw(a, &m);
     drawtable(&d, a);
@@ -551,6 +565,7 @@ static Mesh iconmesh(App *a, f32 size, i64 now)
     a->now  = now;
     Arena f = a->frame;
     Mesh  m = newmesh(&f, (iz)1 << 17);
+    startframe(a);
     Draw  d = newdraw(a, &m);
     drawicon(&d, size);
     finishframe(a);
