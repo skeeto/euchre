@@ -238,7 +238,7 @@ static Bid pointbid(Game *g, i32 seat, Character const *ch)
             best  = s;
         }
     }
-    f32 need = ch->level==LV_BEGINNER ? 8.0f : 7.6f;
+    f32 need = ch->level==LV_BEGINNER ? 7.0f : 6.2f;
     need -= ch->bold;
     if (!round1) {
         need += 0.3f;
@@ -907,7 +907,7 @@ static void thinkstart(Think *t, Game *g, i32 seat, Character const *ch, Arena *
             t->cand[t->ncand++] = ms[i];
         }
     }
-    t->want = g->phase==PH_PLAY ? 32 : 28;
+    t->want = g->phase==PH_PLAY ? 48 : 40;
     t->sv   = newsolver(ai);
     t->view = seatview(g, seat);
 }

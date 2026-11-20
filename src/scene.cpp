@@ -233,6 +233,10 @@ static void dealanimation(App *a)
 static void updatesprites(App *a, b32 snap)
 {
     i64 now = a->now;
+    if (a->opt.headless) {
+        a->pendingdeal = 0;  // shots show things where they rest
+        snap = 1;
+    }
     if (a->pendingdeal) {
         Place deck = deckplace(a);
         for (i32 c = 0; c < NCARDS; c++) {
@@ -381,13 +385,34 @@ static void badge(Draw *d, App *a, i32 seat)
     } else {
         avatar(&bd, ac, ar, seatchar(a, seat));
     }
-    f32 tx = r.x + r.h*0.95f;
-    f32 tw = r.x + r.w - tx - L->pad*0.4f;
+    // Chips at the right, centered: the dealer's, then the maker's
+    f32 cr    = r.h*0.2f;
+    f32 right = r.x + r.w - L->pad*0.4f;
+    Pt  cp    = {right - cr, r.y + r.h/2};
+    if (seat == g->dealer) {
+        chip(&bd, cp, cr, "D", rgb(245, 245, 240), rgb(30, 30, 30));
+        right = cp.x - cr*1.3f;
+        cp.x -= cr*2.3f;
+    }
+    b32 maker = seat==g->maker && g->trump!=NOSUIT;
+    if (maker) {
+        fillcircle(&bd, cp, cr, rgb(0, 0, 0, 90));
+        fillcircle(&bd, cp, cr*0.92f, GOLD);
+        drawsuit(&bd, g->trump, cp.x, cp.y, cr*1.05f, suitcolor(g->trump));
+        right = cp.x - cr*1.3f;
+    }
+
+    f32 tx = r.x + r.h*0.92f;
+    f32 tw = right - tx;
     Str name = seat==SOUTH ? Str("You") : seatchar(a, seat)->name;
-    textleft(&bd, {tx, r.y + r.h*0.14f, tw*0.62f, r.h*0.42f}, L->tlabel, INK, name);
-    Str sub;
+    textleft(&bd, {tx, r.y + r.h*0.14f, tw, r.h*0.42f}, minf(L->tlabel, r.h*0.3f), INK, name);
+    Str   sub;
+    Color subc = INKDIM;
     if (seat == sittingout(g)) {
         sub = "Sitting out";
+    } else if (maker && g->alone) {
+        sub  = "Alone!";
+        subc = GOLD;
     } else if (active && automatic(a, seat) && a->think.active) {
         sub = "Thinking...";
     } else if (seat == SOUTH) {
@@ -395,26 +420,7 @@ static void badge(Draw *d, App *a, i32 seat)
     } else {
         sub = levelname(seatchar(a, seat)->level);
     }
-    textleft(&bd, {tx, r.y + r.h*0.56f, tw, r.h*0.32f}, L->tsmall, INKDIM, sub);
-
-    // Chips along the top-right: dealer, then maker
-    f32 cr = r.h*0.19f;
-    Pt  cp = {r.x + r.w - cr*1.3f, r.y + cr*1.4f};
-    if (seat == g->dealer) {
-        chip(&bd, cp, cr, "D", rgb(245, 245, 240), rgb(30, 30, 30));
-        cp.x -= cr*2.4f;
-    }
-    if (seat==g->maker && g->trump!=NOSUIT) {
-        fillcircle(&bd, cp, cr, rgb(0, 0, 0, 90));
-        fillcircle(&bd, cp, cr*0.92f, GOLD);
-        drawsuit(&bd, g->trump, cp.x, cp.y, cr*1.05f, suitcolor(g->trump));
-        if (g->alone) {
-            Str al = "ALONE";
-            f32 aw = textwidth(d->font, L->tsmall*0.8f, al);
-            textr(&bd, cp.x - cr*1.4f, cp.y - L->tsmall*0.4f, L->tsmall*0.8f, GOLD, al);
-            (void)aw;
-        }
-    }
+    textleft(&bd, {tx, r.y + r.h*0.58f, tw, r.h*0.3f}, minf(L->tsmall, r.h*0.22f), subc, sub);
 }
 
 static void scorepanel(Draw *d, App *a)
@@ -430,13 +436,13 @@ static void scorepanel(Draw *d, App *a)
     Arena t = a->ftmp;
     for (i32 team = 0; team < 2; team++) {
         Rect row = {in.x, in.y + rowh*(f32)team, in.w, rowh};
-        textleft(d, {row.x, row.y, row.w*0.3f, row.h}, L->tlabel, cols[team], names[team]);
+        textleft(d, {row.x, row.y, row.w*0.34f, row.h}, L->tlabel, cols[team], names[team]);
         Buf b(&t, 8);
         print(&b, (i64)g->score[team]);
-        textleft(d, {row.x + row.w*0.28f, row.y, row.w*0.2f, row.h}, L->ttitle*0.8f, INK, finish(&b));
+        textleft(d, {row.x + row.w*0.36f, row.y, row.w*0.16f, row.h}, L->ttitle*0.8f, INK, finish(&b));
         // Pips toward the target
         i32 n   = g->rules.target;
-        f32 x0  = row.x + row.w*0.46f;
+        f32 x0  = row.x + row.w*0.54f;
         f32 pw  = (row.x + row.w - x0) / (f32)n;
         f32 pr  = minf(pw*0.36f, row.h*0.16f);
         for (i32 i = 0; i < n; i++) {
@@ -462,9 +468,9 @@ static void trumppanel(Draw *d, App *a)
         b32 down = g->phase != PH_BID1;
         Str s    = concat(&t, down ? Str("Turned down ") : Str("Turned up "),
                           cardlabel(&t, g->upcard));
-        textleft(&k, {in.x, in.y, in.w, in.h*0.5f}, L->tlabel, INK, s);
+        textleft(&k, {in.x, in.y, in.w, in.h*0.5f}, minf(L->tlabel, in.h*0.3f), INK, s);
         Str s2 = concat(&t, "Dealer: ", seatlabel(a, g->dealer));
-        textleft(&k, {in.x, in.y + in.h*0.5f, in.w, in.h*0.5f}, L->tsmall, INKDIM, s2);
+        textleft(&k, {in.x, in.y + in.h*0.5f, in.w, in.h*0.5f}, minf(L->tsmall, in.h*0.22f), INKDIM, s2);
         return;
     }
     f32 sz = in.h*0.62f;
@@ -475,8 +481,10 @@ static void trumppanel(Draw *d, App *a)
     if (g->alone) {
         who = concat(&t, who, ", alone");
     }
-    textleft(&k, {tx, in.y, in.x + in.w - tx, in.h*0.36f}, L->tbody, INK, suitname(g->trump));
-    textleft(&k, {tx, in.y + in.h*0.36f, in.x + in.w - tx, in.h*0.3f}, L->tsmall, INKDIM, who);
+    textleft(&k, {tx, in.y, in.x + in.w - tx, in.h*0.38f}, minf(L->tbody, in.h*0.28f),
+             INK, suitname(g->trump));
+    textleft(&k, {tx, in.y + in.h*0.38f, in.x + in.w - tx, in.h*0.3f},
+             minf(L->tsmall, in.h*0.2f), INKDIM, who);
     // Tricks taken this hand, by team
     i32 tk[2] = {g->tricks[0] + g->tricks[2], g->tricks[1] + g->tricks[3]};
     f32 y  = in.y + in.h*0.83f;

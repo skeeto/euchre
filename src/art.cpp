@@ -93,19 +93,19 @@ static void cardface(Draw *d, i32 c, i32 trump)
     case NINE: {
         f32 ys[4] = {-44, -15, 15, 44};
         for (i32 i = 0; i < 4; i++) {
-            pip(d, s, -17, ys[i], 20, i>=2);
-            pip(d, s,  17, ys[i], 20, i>=2);
+            pip(d, s, -18, ys[i], 17, i>=2);
+            pip(d, s,  18, ys[i], 17, i>=2);
         }
-        pip(d, s, 0, 0, 20, 0);
+        pip(d, s, 0, 0, 17, 0);
     } break;
     case TEN: {
         f32 ys[4] = {-46, -16, 16, 46};
         for (i32 i = 0; i < 4; i++) {
-            pip(d, s, -17, ys[i], 19, i>=2);
-            pip(d, s,  17, ys[i], 19, i>=2);
+            pip(d, s, -18, ys[i], 16, i>=2);
+            pip(d, s,  18, ys[i], 16, i>=2);
         }
-        pip(d, s, 0, -31, 19, 0);
-        pip(d, s, 0,  31, 19, 1);
+        pip(d, s, 0, -31, 16, 0);
+        pip(d, s, 0,  31, 16, 1);
     } break;
     case ACE:
         pip(d, s, 0, 2, 52, 0);

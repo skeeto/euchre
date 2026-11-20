@@ -227,16 +227,14 @@ static b32 shot(Os *os, App *app, Shot s)
     }
     View v  = {(f32)s.w, (f32)s.h, {}, s.scale};
     i64 now = 1000;
-    for (i32 i = 0; i < 20000; i++) {
+    // Headless, the game runs on without frames until it settles...
+    for (i32 i = 0; i<200000 && !appsettled(app); i++) {
         appupdate(app, now);
-        renderframe(os, app, v, now);
-        if (appsettled(app)) {
-            break;
-        }
         now += 40;
     }
-    // Once more after any rebake, then again for the final atlas
-    for (i32 i = 0; i < 3; i++) {
+    // ...then frames: a first to lay out and ask for text sizes, more
+    // once the atlas holds them and the cards are in place
+    for (i32 i = 0; i < 4; i++) {
         appupdate(app, now);
         renderframe(os, app, v, now);
         now += 200;
@@ -312,6 +310,8 @@ static b32 writeicon(Os *os, App *app, char *path)
     return SDL_SaveFile(path, ico.data, (uz)ico.len);
 }
 
+static void sendgeometry(Os *);
+
 SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv)
 {
     SDL_SetHint(SDL_HINT_NO_SIGNAL_HANDLERS, "1");
@@ -352,7 +352,6 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv)
     if (!os->savepath && !opt.headless) {
         char *base = SDL_GetPrefPath("nullprogram", "Euchre");
         if (base) {
-            os->savepath = SDL_strdup("");
             SDL_asprintf(&os->savepath, "%ssave.txt", base);
             SDL_free(base);
         }
@@ -434,6 +433,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv)
         os->renderer = r;
     }
     SDL_ShowWindow(os->window);
+    sendgeometry(os);
     os->arrow = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_DEFAULT);
     os->hand  = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_POINTER);
     return SDL_APP_CONTINUE;

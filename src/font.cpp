@@ -347,7 +347,12 @@ static i32 wraptext(Font *f, f32 px, f32 maxw, Str s, Str *lines, i32 max)
 {
     i32 n = 0;
     while (s.len && n<max) {
-        s = trimleft(s);
+        for (; s.len && s[0]==' '; s = cuthead(s, 1)) {}
+        if (s.len && s[0]=='\n') {
+            lines[n++] = {};  // a paragraph break
+            s = cuthead(s, 1);
+            continue;
+        }
         iz best = 0, i = 0;
         for (;;) {
             iz j = i;

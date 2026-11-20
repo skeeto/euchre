@@ -349,7 +349,7 @@ static i32 step(App *a)
         a->frozen = 1;
         return -1;
     }
-    if (animating(a) || a->redraw) {
+    if (!a->opt.headless && (animating(a) || a->redraw)) {
         return 0;
     }
     f32 sf = speedfactor(a);
@@ -758,7 +758,7 @@ static i32 appupdate(App *a, i64 now)
 // Whether a headless shot may be taken: nothing moving or pending.
 static b32 appsettled(App *a)
 {
-    if (animating(a) || a->redraw || a->fontwake) {
+    if (!a->opt.headless && (animating(a) || a->redraw || a->fontwake)) {
         return 0;
     }
     if (a->opt.until >= 0) {

@@ -174,8 +174,8 @@ static void playerspanel(Draw *d, App *a)
         Character const *ch = characters + a->sv.set.seats[s];
         fillround(d, tr, L->radius, sel ? BUTTONHOT : BUTTONOFF);
         if (sel) strokeround(d, inset(tr, -3), L->radius*1.2f, 3, GOLD);
-        textin(d, {tr.x, tr.y + th*0.08f, tr.w, th*0.5f}, L->tsmall, INKDIM, roles[i]);
-        textin(d, {tr.x, tr.y + th*0.45f, tr.w, th*0.5f}, L->tlabel, INK, ch->name);
+        textin(d, {tr.x, tr.y + th*0.06f, tr.w, th*0.4f}, minf(L->tsmall, th*0.2f), INKDIM, roles[i]);
+        textin(d, {tr.x, tr.y + th*0.42f, tr.w, th*0.5f}, minf(L->tlabel, th*0.3f), INK, ch->name);
         addhit(a, tr, ID_SEAT + s);
     }
     y += th + L->pad*1.2f;
@@ -230,7 +230,7 @@ static void rulespanel(Draw *d, App *a)
 {
     Layout *L = &a->lay;
     scrim(d, a, 1);
-    Rect r  = sheet(d, a, L->tall ? 900 : 760, L->tall ? 1150 : 760);
+    Rect r  = sheet(d, a, L->tall ? 900 : 760, L->tall ? 1000 : 620);
     Rect in = inset(r, L->pad*1.5f);
     f32  y  = in.y;
     textc(d, r.x + r.w/2, y, L->ttitle, GOLD, "Rules");
