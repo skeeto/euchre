@@ -274,16 +274,35 @@ static void fillpolyc(Draw *d, Pt *local, i32 n, Color c, Color *cs)
     }
 }
 
+// A convex polygon without the antialiased fringe, a third the
+// triangles: for fine texture whose edges nobody inspects.
+static void fillpolyflat(Draw *d, Pt *local, i32 n, Color c)
+{
+    Pt a = xf(d->t, local[0]);
+    Pt b = xf(d->t, local[1]);
+    for (i32 i = 2; i < n; i++) {
+        Pt e = xf(d->t, local[i]);
+        tri(d, a, c, b, c, e, c);
+        b = e;
+    }
+}
+
 static void fillpoly(Draw *d, Pt *local, i32 n, Color c)
 {
     fillpolyc(d, local, n, c, 0);
 }
 
 // Number of segments for a quarter circle of radius r (local units).
+// Few enough to keep each chord within a third of a pixel of the arc.
 static i32 arcsegs(Draw *d, f32 r)
 {
     f32 px = r * xfscale(d->t);
-    i32 n  = (i32)(px / 3);
+    if (px < 1) {
+        return 2;
+    }
+    f32 c = 1 - 0.33f/px;
+    f32 h = sqrtf_(2*(1 - c));  // about the half angle of one chord
+    i32 n = (i32)((PI/4)/h + 0.999f);
     return n<2 ? 2 : n>12 ? 12 : n;
 }
 
@@ -435,23 +454,33 @@ static Color suitcolor(i32 s)
     return s>=2 ? SUITRED : SUITBLACK;
 }
 
+// Every so many of a heart's 48 points, for its size in pixels: a small
+// pip needs far fewer than a large one to look round.
+static i32 heartstep(Draw *d, f32 size)
+{
+    f32 px = size * xfscale(d->t);
+    return px<14 ? 4 : px<26 ? 3 : px<60 ? 2 : 1;
+}
+
 static void drawsuit(Draw *d, i32 s, f32 x, f32 y, f32 size, Color c)
 {
     Pt p[48];
     switch (s) {
     case 3: {  // hearts
         Pt const *u = heartunit();
-        for (i32 i = 0; i < 48; i++) {
-            p[i] = {x + u[i].x*size*1.08f, y + u[i].y*size*0.95f};
+        i32 step = heartstep(d, size), n = 0;
+        for (i32 i = 0; i < 48; i += step) {
+            p[n++] = {x + u[i].x*size*1.08f, y + u[i].y*size*0.95f};
         }
-        fillpoly(d, p, 48, c);
+        fillpoly(d, p, n, c);
     } break;
     case 1: {  // spades: an inverted heart on a flared stem
         Pt const *u = heartunit();
-        for (i32 i = 0; i < 48; i++) {
-            p[i] = {x + u[i].x*size*1.0f, y - 0.08f*size - u[i].y*size*0.78f};
+        i32 step = heartstep(d, size), n = 0;
+        for (i32 i = 0; i < 48; i += step) {
+            p[n++] = {x + u[i].x*size*1.0f, y - 0.08f*size - u[i].y*size*0.78f};
         }
-        fillpoly(d, p, 48, c);
+        fillpoly(d, p, n, c);
         Pt stem[4] = {
             {x - 0.05f*size, y + 0.05f*size}, {x + 0.05f*size, y + 0.05f*size},
             {x + 0.20f*size, y + 0.50f*size}, {x - 0.20f*size, y + 0.50f*size},

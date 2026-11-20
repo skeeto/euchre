@@ -155,7 +155,7 @@ static void cardback(Draw *d)
             f32 y = -56 + 14*(f32)row;
             if (x > 37) continue;
             Pt q[4] = {{x, y-5}, {x+4, y}, {x, y+5}, {x-4, y}};
-            fillpoly(d, q, 4, BACKLINE);
+            fillpolyflat(d, q, 4, BACKLINE);
         }
     }
     fillround(d, {-14, -18, 28, 36}, 5, BACK);

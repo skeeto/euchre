@@ -4,6 +4,8 @@
 //   euchre_test               run the unit tests
 //   euchre_test --duel A B N  N duplicate deals, characters A+A vs B+B
 //   euchre_test --bench       time expert decisions
+//   euchre_test --frames W H SCALE SECONDS
+//                             time drawing an autoplayed game at 60 Hz
 // This is free and unencumbered software released into the public domain.
 #include <stdio.h>
 #include <stdlib.h>
@@ -79,6 +81,7 @@ static Str yes(b32 v)
 #include "test/ai_test.cpp"
 #include "test/layout_test.cpp"
 #include "test/duel.cpp"
+#include "test/frames.cpp"
 
 int main(int argc, char **argv)
 {
@@ -94,6 +97,10 @@ int main(int argc, char **argv)
         }
         if (a1 == "--bench") {
             return bench(t.perm);
+        }
+        if (a1=="--frames" && argc>=6) {
+            return frames(t.perm, (f32)atof(argv[2]), (f32)atof(argv[3]),
+                          (f32)atof(argv[4]), atoi(argv[5]));
         }
         if (a1=="--seeds" && argc>=3) {
             // Saves at many states, as a fuzzing corpus

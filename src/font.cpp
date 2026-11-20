@@ -2,10 +2,12 @@
 //
 // Sizes are cap heights in pixels, snapped to buckets 7% apart, and text
 // is drawn at exactly the bucket's size, so glyphs land unscaled and
-// crisp at any density. Every size a frame asks for is noted; a size not
-// yet baked is drawn this once from the nearest one, and fontupdate then
-// rebakes the atlas with all the sizes the frame used. The platform
-// uploads the atlas again when its version changes.
+// crisp at any density. Every glyph a frame asks for is noted, by size;
+// one not yet baked is drawn this once from the nearest size that has
+// it, and the atlas is then rebaked with all the glyphs in use. Only the
+// glyphs used are baked, so many sizes fit: large text uses few
+// characters. The platform uploads the atlas again when its version
+// changes.
 //
 // The atlas is white RGBA with coverage in alpha, so vertex colors tint
 // it, and its top rows are a block of opaque white for untextured fills.
@@ -65,26 +67,74 @@ static u8 const interttf[] = {
 #endif
 
 enum : i32 {
-    ATLAS_W    = 2048,
+    ATLAS_W    = 1024,
     ATLAS_H    = 1024,
     WHITE_ROWS = 4,
     NBUCKETS   = 64,
     MAXBAKE    = 80,   // largest cap height baked; larger text scales up
 };
 
+// A set of printable ASCII characters
+struct Chars {
+    u64 m[2];
+};
+
+static void charsadd(Chars *s, i32 c)
+{
+    c -= 32;
+    s->m[c>>6] |= (u64)1 << (c&63);
+}
+
+static b32 charshas(Chars s, i32 c)
+{
+    c -= 32;
+    return s.m[c>>6]>>(c&63) & 1;
+}
+
+static b32 charsempty(Chars s)
+{
+    return !(s.m[0] | s.m[1]);
+}
+
+// Whether a holds every character of b.
+static b32 charsall(Chars a, Chars b)
+{
+    return !(b.m[0] & ~a.m[0]) && !(b.m[1] & ~a.m[1]);
+}
+
+static Chars charsor(Chars a, Chars b)
+{
+    return {{a.m[0] | b.m[0], a.m[1] | b.m[1]}};
+}
+
+// The font's characters in a string; suit symbols are shapes.
+static Chars charsof(Str s)
+{
+    Chars r = {};
+    for (iz i = 0; i < s.len; i++) {
+        i32 c = s[i];
+        if (c>=1 && c<=4) {
+            continue;
+        }
+        charsadd(&r, c<32 || c>126 ? '?' : c);
+    }
+    return r;
+}
+
 struct Font {
     stbtt_fontinfo   info;
     f32              capratio;  // cap height per pixel height
     u8              *rgba;      // ATLAS_W x ATLAS_H
     i32              version;   // bumped at every bake
-    b32              baked[NBUCKETS];
+    Chars            baked[NBUCKETS];   // glyphs in the atlas, per size
     stbtt_packedchar chars[NBUCKETS][95];
-    b32              used[NBUCKETS];  // asked for this frame
-    b32              recent[NBUCKETS];  // asked for by the last frame lacking one
-    b32              want[NBUCKETS];  // to add at the next rebake
-    b32              missing;         // a size used this frame isn't baked
-    b32              pending;         // a rebake is wanted
-    i64              bakedat;         // when, for pacing rebakes
+    Chars            used[NBUCKETS];    // asked for this frame
+    Chars            recent[NBUCKETS];  // asked for by the last frame lacking one
+    Chars            want[NBUCKETS];    // to add at the next rebake
+    b32              missing;   // a glyph used this frame isn't baked
+    b32              moving;    // this frame is mid-animation
+    b32              pending;   // a rebake is wanted
+    i64              bakedat;   // when, for pacing rebakes
 };
 
 // Cap height of bucket k: 6 px growing 7% a step.
@@ -106,9 +156,9 @@ static i32 bucketof(f32 px)
     return k;
 }
 
-// Bake the given buckets; ones that don't fit are left unbaked. Returns
-// whether all fit.
-static b32 bake(Font *f, b32 *want, Arena scratch)
+// Bake the given glyphs of each size, smallest sizes first; sizes that
+// don't fit are left unbaked. Returns whether all fit.
+static b32 bake(Font *f, Chars *want, Arena scratch)
 {
     b32 all = 1;
     fillbytes(f->baked, 0, sizeof(f->baked));
@@ -119,14 +169,29 @@ static b32 bake(Font *f, b32 *want, Arena scratch)
     stbtt_PackBegin(&pc, alpha + ATLAS_W*WHITE_ROWS, ATLAS_W,
                     ATLAS_H-WHITE_ROWS, ATLAS_W, 1, &scratch);
     for (i32 k = 0; k < NBUCKETS; k++) {
-        if (!want[k] || bucketpx(k)>MAXBAKE) {
+        if (charsempty(want[k]) || bucketpx(k)>MAXBAKE) {
             continue;
+        }
+        int              cps[95];
+        stbtt_packedchar got[95];
+        i32              n = 0;
+        for (i32 c = 32; c < 127; c++) {
+            if (charshas(want[k], c)) {
+                cps[n++] = c;
+            }
         }
         Arena t = scratch;
         pc.user_allocator_context = &t;
-        f32 height = bucketpx(k) / f->capratio;
-        if (stbtt_PackFontRange(&pc, interttf, 0, height, 32, 95, f->chars[k])) {
-            f->baked[k] = 1;
+        stbtt_pack_range r = {};
+        r.font_size = bucketpx(k) / f->capratio;
+        r.array_of_unicode_codepoints = cps;
+        r.num_chars = n;
+        r.chardata_for_range = got;
+        if (stbtt_PackFontRanges(&pc, interttf, 0, &r, 1)) {
+            f->baked[k] = want[k];
+            for (i32 i = 0; i < n; i++) {
+                f->chars[k][cps[i]-32] = got[i];
+            }
         } else {
             all = 0;
         }
@@ -142,10 +207,10 @@ static b32 bake(Font *f, b32 *want, Arena scratch)
     }
     // Glyph rects shifted down past the white rows
     for (i32 k = 0; k < NBUCKETS; k++) {
-        if (f->baked[k]) {
-            for (i32 c = 0; c < 95; c++) {
-                f->chars[k][c].y0 = (unsigned short)(f->chars[k][c].y0 + WHITE_ROWS);
-                f->chars[k][c].y1 = (unsigned short)(f->chars[k][c].y1 + WHITE_ROWS);
+        for (i32 c = 32; c < 127; c++) {
+            if (charshas(f->baked[k], c)) {
+                f->chars[k][c-32].y0 = (unsigned short)(f->chars[k][c-32].y0 + WHITE_ROWS);
+                f->chars[k][c-32].y1 = (unsigned short)(f->chars[k][c-32].y1 + WHITE_ROWS);
             }
         }
     }
@@ -174,12 +239,17 @@ static void whiteuv(f32 *u, f32 *v)
     *v = 2.0f / ATLAS_H;
 }
 
-// The baked bucket nearest k, or -1 if none.
-static i32 nearestbaked(Font *f, i32 k)
+// The bucket nearest k holding all of cs, or -1 if none, larger on a
+// tie: shrinking a glyph looks better than enlarging one.
+static i32 nearestbaked(Font *f, i32 k, Chars cs)
 {
     for (i32 d = 0; d < NBUCKETS; d++) {
-        if (k-d>=0 && f->baked[k-d]) return k-d;
-        if (k+d<NBUCKETS && f->baked[k+d]) return k+d;
+        if (k+d<NBUCKETS && !charsempty(f->baked[k+d]) && charsall(f->baked[k+d], cs)) {
+            return k+d;
+        }
+        if (k-d>=0 && !charsempty(f->baked[k-d]) && charsall(f->baked[k-d], cs)) {
+            return k-d;
+        }
     }
     return -1;
 }
@@ -190,11 +260,11 @@ struct Fit {
     f32 px;     // the size drawn
 };
 
-static Fit fitsize(Font *f, f32 px)
+// The bucket to draw the characters cs from at cap height px.
+static Fit fitsize(Font *f, f32 px, Chars cs)
 {
     Fit r = {};
     i32 k = bucketof(px);
-    f->used[k] = 1;
     r.px = bucketpx(k);
     if (r.px > MAXBAKE) {
         // Larger than baked: the largest bake, scaled up.
@@ -202,14 +272,14 @@ static Fit fitsize(Font *f, f32 px)
         for (i32 i = 0; i < NBUCKETS && bucketpx(i)<=MAXBAKE; i++) {
             top = i;
         }
-        f->used[top] = 1;
-        f->used[k] = 0;
         k = top;
         r.px = px;
     }
-    if (!f->baked[k]) {
-        f->missing = 1;
-        k = nearestbaked(f, k);
+    f->used[k] = charsor(f->used[k], cs);
+    if (!charsall(f->baked[k], cs)) {
+        // In motion, sizes pass by too fast to be worth baking
+        f->missing |= !f->moving || !f->version;
+        k = nearestbaked(f, k, cs);
     }
     r.k = k;
     r.scale = k>=0 ? r.px/bucketpx(k) : 1;
@@ -224,7 +294,7 @@ static f32 suitadvance(f32 px)
 // Width of text at cap height px.
 static f32 textwidth(Font *f, f32 px, Str s)
 {
-    Fit fit = fitsize(f, px);
+    Fit fit = fitsize(f, px, charsof(s));
     f32 w   = 0;
     for (iz i = 0; i < s.len; i++) {
         i32 c = s[i];
@@ -241,7 +311,7 @@ static f32 textwidth(Font *f, f32 px, Str s)
 // The size actually drawn for a request of px.
 static f32 textpx(Font *f, f32 px)
 {
-    return fitsize(f, px).px;
+    return fitsize(f, px, {}).px;
 }
 
 // Pixels per local unit for choosing text sizes. A card mid-flip is
@@ -271,7 +341,7 @@ static void text(Draw *d, f32 x, f32 y, f32 px, Color col, Str s)
 {
     Font *f    = d->font;
     f32   ps   = textscale(d);
-    Fit   fit  = fitsize(f, px*ps);
+    Fit   fit  = fitsize(f, px*ps, charsof(s));
     f32   sc   = fit.scale / ps;  // baked pixels to local units
     f32   cap  = fit.px / ps;
     b32   snap = isidentity(d->t) && fit.scale==1;
@@ -409,7 +479,7 @@ static b32 fontupdate(Font *f)
     if (f->missing) {
         f->pending = 1;
         for (i32 k = 0; k < NBUCKETS; k++) {
-            f->want[k] |= f->used[k];
+            f->want[k]   = charsor(f->want[k], f->used[k]);
             f->recent[k] = f->used[k];
         }
     }
@@ -432,9 +502,9 @@ static b32 fontprepare(Font *f, i64 now, Arena scratch)
     if (!f->pending || now<fontdue(f)) {
         return 0;
     }
-    b32 want[NBUCKETS];
+    Chars want[NBUCKETS];
     for (i32 k = 0; k < NBUCKETS; k++) {
-        want[k] = f->want[k] | f->baked[k];
+        want[k] = charsor(f->want[k], f->baked[k]);
     }
     if (!bake(f, want, scratch)) {
         // Full: start over with just what's in use

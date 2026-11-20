@@ -541,6 +541,7 @@ static Mesh apprender(App *a, View v, i64 now)
     updatesprites(a, snap);
     startframe(a);
     a->drawnat = a->now;
+    a->font->moving = animating(a);
 
     Draw d = newdraw(a, &m);
     drawtable(&d, a);

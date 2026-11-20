@@ -32,6 +32,7 @@ Tests, and tools for measuring the computer players:
     $ ctest --test-dir build
     $ ./build/euchre_test --duel 0 3 2000   # Ruth vs Bev, duplicate deals
     $ ./build/euchre_test --bench           # time expert decisions
+    $ ./build/euchre_test --frames 1080 2408 2.625 120  # frame cost, as a phone
 
 The save loader has an AFL++ harness, `src/main_fuzz.cpp`; its header
 says how to build and run it.
