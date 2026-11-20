@@ -136,6 +136,7 @@ struct App {
     i64       animend;       // last moving sprite's end
     b32       pendingdeal;   // gather every card to the deck first
     i64       fontwake;      // a pending rebake's time
+    i64       drawnat;       // when the last frame was drawn
 
     // Flow
     Think     think;
@@ -749,10 +750,29 @@ static i32 appupdate(App *a, i64 now)
             min = min<0 || f<min ? f : min;
         }
     }
+    // The last frame drawn mid-motion isn't the resting one: draw again
+    if (a->drawnat < a->animend) {
+        a->redraw = 1;
+    }
     if (animating(a) || a->redraw) {
         return 0;
     }
     return min;
+}
+
+// After a frame: ms until the next is needed, folding in a font rebake
+// the frame just asked for.
+static i32 appwait(App *a, i32 wait)
+{
+    if (a->redraw) {
+        return 0;
+    }
+    if (a->fontwake) {
+        i32 f = (i32)(a->fontwake - a->now);
+        f = f<1 ? 1 : f;
+        wait = wait<0 || f<wait ? f : wait;
+    }
+    return wait;
 }
 
 // Whether a headless shot may be taken: nothing moving or pending.

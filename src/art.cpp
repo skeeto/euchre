@@ -66,14 +66,17 @@ static void pip(Draw *d, i32 suit, f32 x, f32 y, f32 size, b32 flip)
 // One corner's index: the rank over a small suit.
 static void cornerindex(Draw *d, i32 c)
 {
+    // The index column runs from 5 to 20, clear of the edge and of the
+    // pips and court frame, which start at 25. A "10" is condensed to fit.
     Str r   = rankname(rankof(c));
-    f32 px  = 17;
-    f32 w   = textwidthd(d, px, r);
+    f32 px  = 16;
     f32 cx  = 12.5f;
     Color k = suitcolor(suitof(c));
-    textc(d, cx, 7, px, k, r);
-    (void)w;
-    drawsuit(d, suitof(c), cx, 7 + 17 + 9, 12, k);
+    f32 w   = textwidthd(d, px, r);
+    f32 sx  = w>14 ? 14/w : 1;
+    Draw t  = withxf(d, placexf(cx, 0, 0, sx, 1));
+    textc(&t, 0, 7, px, k, r);
+    drawsuit(d, suitof(c), cx, 7 + 16 + 9, 11, k);
 }
 
 static void cardface(Draw *d, i32 c, i32 trump)
@@ -93,16 +96,16 @@ static void cardface(Draw *d, i32 c, i32 trump)
     case NINE: {
         f32 ys[4] = {-44, -15, 15, 44};
         for (i32 i = 0; i < 4; i++) {
-            pip(d, s, -18, ys[i], 17, i>=2);
-            pip(d, s,  18, ys[i], 17, i>=2);
+            pip(d, s, -17, ys[i], 16, i>=2);
+            pip(d, s,  17, ys[i], 16, i>=2);
         }
-        pip(d, s, 0, 0, 17, 0);
+        pip(d, s, 0, 0, 16, 0);
     } break;
     case TEN: {
         f32 ys[4] = {-46, -16, 16, 46};
         for (i32 i = 0; i < 4; i++) {
-            pip(d, s, -18, ys[i], 16, i>=2);
-            pip(d, s,  18, ys[i], 16, i>=2);
+            pip(d, s, -17, ys[i], 16, i>=2);
+            pip(d, s,  17, ys[i], 16, i>=2);
         }
         pip(d, s, 0, -31, 16, 0);
         pip(d, s, 0,  31, 16, 1);
@@ -113,11 +116,11 @@ static void cardface(Draw *d, i32 c, i32 trump)
     default: {
         // Courts: a framed panel with the letter and the suit
         Color tint = s>=2 ? Color{0.99f, 0.90f, 0.88f, 1} : Color{0.90f, 0.92f, 0.97f, 1};
-        fillround(d, {-30, -48, 60, 96}, 5, k);
-        fillround(d, {-28, -46, 56, 92}, 4, tint);
+        fillround(d, {-25, -48, 50, 96}, 5, k);
+        fillround(d, {-23, -46, 46, 92}, 4, tint);
         Str l = rankname(r);
-        textc(d, 0, -34, 34, k, l);
-        drawsuit(d, s, 0, 20, 30, k);
+        textc(d, 0, -34, 32, k, l);
+        drawsuit(d, s, 0, 20, 28, k);
         // a crown's points for the king and queen, a band for the jack
         if (r == KING || r == QUEEN) {
             for (i32 i = -1; i <= 1; i++) {
@@ -126,7 +129,7 @@ static void cardface(Draw *d, i32 c, i32 trump)
             }
         }
         if (r == JACK) {
-            fillrect(d, {-20, 37, 40, 3}, withalpha(k, 0.5f));
+            fillrect(d, {-17, 37, 34, 3}, withalpha(k, 0.5f));
         }
     } break;
     }

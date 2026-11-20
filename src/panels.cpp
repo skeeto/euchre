@@ -102,13 +102,19 @@ static void summary(Draw *d, App *a)
     Buf s0(&t, 8), s1(&t, 8);
     print(&s0, (i64)g->score[0]);
     print(&s1, (i64)g->score[1]);
-    f32 cx = r.x + r.w/2;
-    textr(&k, cx - L->pad*1.5f, y, L->tbig, US, finish(&s0));
-    textc(&k, cx, y + L->tbig*0.3f, L->tlabel, INKDIM, "to");
-    text(&k, cx + L->pad*1.5f, y, L->tbig, THEM, finish(&s1));
+    // Each label centered under its number, "to" on their baseline
+    f32 cx  = r.x + r.w/2;
+    Str n0  = finish(&s0);
+    Str n1  = finish(&s1);
+    f32 gap = L->pad*1.5f;
+    f32 c0  = cx - gap - textwidthd(&k, L->tbig, n0)/2;
+    f32 c1  = cx + gap + textwidthd(&k, L->tbig, n1)/2;
+    textr(&k, cx - gap, y, L->tbig, US, n0);
+    textc(&k, cx, y + L->tbig - L->tlabel, L->tlabel, INKDIM, "to");
+    text(&k, cx + gap, y, L->tbig, THEM, n1);
     y += L->tbig + L->pad;
-    textr(&k, cx - L->pad*1.5f, y, L->tsmall, INKDIM, "Us");
-    text(&k, cx + L->pad*1.5f, y, L->tsmall, INKDIM, "Them");
+    textc(&k, c0, y, L->tsmall, INKDIM, "Us");
+    textc(&k, c1, y, L->tsmall, INKDIM, "Them");
 
     if (over) {
         Buf w(&t, 64);
@@ -534,6 +540,7 @@ static Mesh apprender(App *a, View v, i64 now)
     a->nhits = 0;
     updatesprites(a, snap);
     startframe(a);
+    a->drawnat = a->now;
 
     Draw d = newdraw(a, &m);
     drawtable(&d, a);

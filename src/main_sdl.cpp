@@ -558,9 +558,7 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     if (app->redraw || wait==0) {
         renderframe(os, app, windowview(os), now);
         SDL_RenderPresent(os->renderer);
-        if (app->redraw) {
-            wait = 0;  // the frame asked for another
-        }
+        wait = appwait(app, wait);  // the frame may ask for another
     }
     if (app->cursor != os->cursor) {
         os->cursor = app->cursor;
