@@ -47,6 +47,7 @@ struct Options {
     i32 until = -1;  // a phase to play on to, then hold
     Str open;        // an overlay to open
     b32 headless;
+    b32 noquit;      // the platform has no quitting (a web page)
 };
 
 enum : i32 {

@@ -1,7 +1,12 @@
 // SDL3 platform layer: window, input, audio, saving, and frame pacing
 // $ cmake -B build && cmake --build build && ./build/euchre
+// $ emcmake cmake -B build-web && cmake --build build-web
 //
-// SDL's main callbacks drive the program, as the web build will need.
+// The same layer serves the desktop and, under Emscripten, the web,
+// where the canvas fills the page, the game saves to localStorage, and
+// the page's CSS supplies a phone's safe-area insets.
+//
+// SDL's main callbacks drive the program, as the web requires.
 // The core hands back one triangle list per frame over its font atlas,
 // drawn with a single SDL_RenderGeometry. Frames are drawn only when
 // something changed or moves: appupdate says how long nothing will
@@ -18,11 +23,28 @@
 //                    passed score over) and --open PANEL (menu players
 //                    rules stats help welcome)
 //   --icon FILE      write the Windows icon (assets/euchre.ico)
+//   --png SIZE[m] FILE
+//                    write a PNG icon for the web (web/icon-*.png), "m"
+//                    for a maskable one
 //
 // This is free and unencumbered software released into the public domain.
 #define SDL_MAIN_USE_CALLBACKS 1
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
+#ifdef __EMSCRIPTEN__
+#  include <emscripten.h>
+#else
+   // Only for --png, a developer tool
+#  define STB_IMAGE_WRITE_IMPLEMENTATION
+#  define STB_IMAGE_WRITE_STATIC
+#  define STBI_WRITE_NO_STDIO
+#  define STBIW_MALLOC(n)      SDL_malloc(n)
+#  define STBIW_REALLOC(p, n)  SDL_realloc(p, n)
+#  define STBIW_FREE(p)        SDL_free(p)
+#  define STBIW_MEMMOVE(d, s, n) SDL_memmove(d, s, n)
+#  define STBIW_ASSERT(c)      SDL_assert(c)
+#  include "stb_image_write.h"
+#endif
 #include "euchre.cpp"
 
 enum : i32 {
@@ -61,6 +83,56 @@ struct Os {
     __builtin_trap();
 }
 
+#ifdef __EMSCRIPTEN__
+// On the web the game lives in localStorage, under one key. A setItem
+// replaces the whole value, so a save is atomic.
+EM_JS(int, web_loadlen, (), {
+    var v = null;
+    try { v = localStorage.getItem("euchre"); } catch (e) {}
+    if (v === null) return -1;
+    Module.euchreLoaded = new TextEncoder().encode(v);
+    return Module.euchreLoaded.length;
+});
+
+EM_JS(void, web_loadcopy, (unsigned char *dst), {
+    HEAPU8.set(Module.euchreLoaded, dst);
+    Module.euchreLoaded = null;
+});
+
+EM_JS(int, web_save, (unsigned char const *p, int len), {
+    try {
+        var s = new TextDecoder().decode(HEAPU8.subarray(p, p+len));
+        localStorage.setItem("euchre", s);
+        return 1;
+    } catch (e) {
+        return 0;
+    }
+});
+
+// A safe-area inset in CSS pixels, which the page's style exposes
+EM_JS(double, web_inset, (int side), {
+    var n = ["top", "right", "bottom", "left"][side];
+    var v = getComputedStyle(document.documentElement).getPropertyValue("--sai-" + n);
+    return parseFloat(v) || 0;
+});
+
+static Str os_load(Os *, Arena *a)
+{
+    i32 len = web_loadlen();
+    if (len < 0) {
+        return {};
+    }
+    Str r = {allocbytes(a, len), len};
+    web_loadcopy(r.data);
+    return r;
+}
+
+static b32 os_save(Os *, Arena, Str state)
+{
+    return web_save(state.data, (int)state.len);
+}
+
+#else
 static Str os_load(Os *os, Arena *a)
 {
     uz    len  = 0;
@@ -84,6 +156,7 @@ static b32 os_save(Os *os, Arena scratch, Str state)
     return SDL_SaveFile(path, state.data, (uz)state.len) &&
            SDL_RenamePath(path, os->savepath);
 }
+#endif
 
 static void os_play(Os *os, i32 sfx)
 {
@@ -184,6 +257,15 @@ static View windowview(Os *os)
     if (v.scale <= 0) {
         v.scale = 1;
     }
+    #ifdef __EMSCRIPTEN__
+    // SDL doesn't report a phone's notch and home bar on the web
+    int pw = 0, ph = 0;
+    SDL_GetWindowSize(os->window, &pw, &ph);
+    f32 ratio = pw>0 ? v.w/(f32)pw : 1;
+    for (i32 i = 0; i < 4; i++) {
+        v.inset[i] = (f32)web_inset(i) * ratio;
+    }
+    #endif
     return v;
 }
 
@@ -247,9 +329,12 @@ static b32 shot(Os *os, App *app, Shot s)
     return ok;
 }
 
-// Render the icon at the given size into RGBA pixels.
-static u8 *rendericon(Os *os, App *app, i32 size, Arena *a)
+// Render the icon at the given size into RGBA pixels. The software
+// renderer's triangles are hard edged, so draw at 4x and average down.
+static u8 *rendericon(Os *os, App *app, i32 out, b32 maskable, Arena *a)
 {
+    i32 const    ss   = 4;
+    i32          size = out * ss;
     SDL_Surface *surf = SDL_CreateSurface(size, size, SDL_PIXELFORMAT_ABGR8888);
     if (!surf) {
         return 0;
@@ -261,16 +346,34 @@ static u8 *rendericon(Os *os, App *app, i32 size, Arena *a)
     }
     SDL_SetRenderDrawBlendMode(os->renderer, SDL_BLENDMODE_NONE);
     for (i32 i = 0; i < 3; i++) {
-        Mesh m = iconmesh(app, (f32)size, 1000 + 200*i);
+        Mesh m = iconmesh(app, (f32)size, maskable, 1000 + 200*i);
         uploadatlas(os, app);
         SDL_SetRenderDrawColor(os->renderer, 0, 0, 0, 0);
         SDL_RenderClear(os->renderer);
         SDL_RenderGeometry(os->renderer, os->atlas, (SDL_Vertex *)m.v, (int)m.len, 0, 0);
     }
     SDL_RenderPresent(os->renderer);
-    u8 *px = allocbytes(a, (iz)size*size*4);
-    for (i32 y = 0; y < size; y++) {
-        copybytes(px + (iz)y*size*4, (u8 *)surf->pixels + (iz)y*surf->pitch, size*4);
+    // Average each block, weighting color by alpha
+    u8 *px = allocbytes(a, (iz)out*out*4);
+    for (i32 y = 0; y < out; y++) {
+        for (i32 x = 0; x < out; x++) {
+            i32 sum[4] = {};
+            for (i32 j = 0; j < ss; j++) {
+                u8 *row = (u8 *)surf->pixels + (iz)(y*ss + j)*surf->pitch;
+                for (i32 i = 0; i < ss; i++) {
+                    u8 *p = row + (x*ss + i)*4;
+                    sum[0] += p[0]*p[3];
+                    sum[1] += p[1]*p[3];
+                    sum[2] += p[2]*p[3];
+                    sum[3] += p[3];
+                }
+            }
+            u8 *q = px + ((iz)y*out + x)*4;
+            for (i32 c = 0; c < 3; c++) {
+                q[c] = (u8)(sum[3] ? (sum[c] + sum[3]/2)/sum[3] : 0);
+            }
+            q[3] = (u8)((sum[3] + ss*ss/2) / (ss*ss));
+        }
     }
     SDL_DestroyTexture(os->atlas);
     os->atlas = 0;
@@ -285,7 +388,7 @@ static void seticon(Os *os, App *app)
 {
     Arena t = app->scratch;
     i32   n = 64;
-    u8   *px = rendericon(os, app, n, &t);
+    u8   *px = rendericon(os, app, n, 0, &t);
     if (px) {
         SDL_Surface *s = SDL_CreateSurfaceFrom(n, n, SDL_PIXELFORMAT_ABGR8888, px, n*4);
         if (s) {
@@ -301,13 +404,40 @@ static b32 writeicon(Os *os, App *app, char *path)
     Arena t = app->scratch;
     u8   *imgs[countof(sizes)];
     for (i32 i = 0; i < countof(sizes); i++) {
-        imgs[i] = rendericon(os, app, sizes[i], &t);
+        imgs[i] = rendericon(os, app, sizes[i], 0, &t);
         if (!imgs[i]) {
             return 0;
         }
     }
     Str ico = makeico(&t, sizes, imgs, countof(sizes));
     return SDL_SaveFile(path, ico.data, (uz)ico.len);
+}
+
+// Write a PNG icon for the web; a trailing "m" on the size asks for a
+// maskable one.
+static b32 writepng(Os *os, App *app, char *size, char *path)
+{
+    #ifdef __EMSCRIPTEN__
+    return 0;
+    #else
+    Str s  = cstrarg(size);
+    b32 mk = s.len && s.data[s.len-1]=='m';
+    Int n  = parseint(mk ? Str{s.data, s.len-1} : s);
+    if (!n.ok || n.val<16 || n.val>1024) {
+        return 0;
+    }
+    Arena t  = app->scratch;
+    u8   *px = rendericon(os, app, (i32)n.val, mk, &t);
+    if (!px) {
+        return 0;
+    }
+    i32 sz  = (i32)n.val;
+    int len = 0;
+    u8 *png = stbi_write_png_to_mem(px, sz*4, sz, sz, 4, &len);
+    b32 ok  = png && SDL_SaveFile(path, png, (uz)len);
+    SDL_free(png);
+    return ok;
+    #endif
 }
 
 static void sendgeometry(Os *);
@@ -323,6 +453,10 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv)
     Options opt  = {};
     Shot    shotat = {};
     char   *iconpath = 0;
+    char   *pngsize  = 0;
+    #ifdef __EMSCRIPTEN__
+    opt.noquit = 1;
+    #endif
     for (i32 i = 1; i < argc; i++) {
         Str a = cstrarg(argv[i]);
         b32 more = i+1 < argc;
@@ -343,13 +477,22 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv)
             opt.open = cstrarg(argv[++i]);
         } else if (a=="--icon" && more) {
             iconpath = argv[++i];
+        } else if (a=="--png" && i+2<argc) {
+            pngsize = argv[i+1];
+            iconpath = argv[i+2];
+            i += 2;
         } else {
             SDL_Log("euchre: unknown option: %s", argv[i]);
             return SDL_APP_FAILURE;
         }
     }
     opt.headless = shotat.path || iconpath;
-    if (!os->savepath && !opt.headless) {
+    #ifdef __EMSCRIPTEN__
+    b32 web = 1;
+    #else
+    b32 web = 0;
+    #endif
+    if (!os->savepath && !opt.headless && !web) {
         char *base = SDL_GetPrefPath("nullprogram", "Euchre");
         if (base) {
             SDL_asprintf(&os->savepath, "%ssave.txt", base);
@@ -377,6 +520,9 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv)
     os->app   = app;
     os->clips = app->clips;
 
+    if (pngsize) {
+        return writepng(os, app, pngsize, iconpath) ? SDL_APP_SUCCESS : SDL_APP_FAILURE;
+    }
     if (iconpath) {
         return writeicon(os, app, iconpath) ? SDL_APP_SUCCESS : SDL_APP_FAILURE;
     }
@@ -404,12 +550,19 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv)
     if (g.max) {
         flags |= SDL_WINDOW_MAXIMIZED;
     }
+    if (web) {
+        // The page is the window, sized by the browser
+        flags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY |
+                SDL_WINDOW_FILL_DOCUMENT;
+    }
     if (!SDL_CreateWindowAndRenderer("Euchre", w, h, flags, &os->window, &os->renderer)) {
         SDL_Log("euchre: %s", SDL_GetError());
         return SDL_APP_FAILURE;
     }
-    SDL_SetWindowMinimumSize(os->window, MINWIN_W, MINWIN_H);
-    if (g.w >= MINWIN_W) {
+    if (!web) {
+        SDL_SetWindowMinimumSize(os->window, MINWIN_W, MINWIN_H);
+    }
+    if (g.w>=MINWIN_W && !web) {
         // Only where some display still shows the window's top
         SDL_Rect want = {g.x, g.y, w, 40};
         i32      n    = 0;
@@ -425,7 +578,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv)
         SDL_free(ds);
     }
     SDL_SetRenderVSync(os->renderer, 1);
-    {
+    if (!web) {
         // The icon is drawn by the core with its own renderer
         SDL_Renderer *r = os->renderer;
         os->renderer = 0;

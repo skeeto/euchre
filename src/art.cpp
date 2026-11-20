@@ -228,14 +228,23 @@ static void avatar(Draw *d, Pt c, f32 r, Character const *ch)
     textin(d, centered(c, r*2, r*2), r*0.95f, INK, initial);
 }
 
-// The program's icon: two bowers fanned on the felt.
-static void drawicon(Draw *d, f32 size)
+// The program's icon: two bowers fanned on the felt. A maskable icon,
+// which a launcher crops to a shape of its choosing, is full bleed with
+// the cards inside the central circle that every shape keeps.
+static void drawicon(Draw *d, f32 size, b32 maskable)
 {
     Rect r = {0, 0, size, size};
-    fillround(d, inset(r, size*0.04f), size*0.2f, FELT_OUT);
-    fillround(d, inset(r, size*0.08f), size*0.17f, FELT_IN);
-    Place a = {size*0.40f, size*0.52f, size*0.42f, -0.25f, 1, 1, 0, 0};
-    Place b = {size*0.60f, size*0.50f, size*0.42f,  0.22f, 1, 1, 0, 0};
+    f32  k = 1;
+    if (maskable) {
+        felt(d, r);
+        k = 0.78f;
+    } else {
+        fillround(d, inset(r, size*0.04f), size*0.2f, FELT_OUT);
+        fillround(d, inset(r, size*0.08f), size*0.17f, FELT_IN);
+    }
+    f32   c = size/2;
+    Place a = {c + (size*0.40f-c)*k, c + (size*0.52f-c)*k, size*0.42f*k, -0.25f, 1, 1, 0, 0};
+    Place b = {c + (size*0.60f-c)*k, c + (size*0.50f-c)*k, size*0.42f*k,  0.22f, 1, 1, 0, 0};
     drawcard(d, mkcard(DIAMONDS, JACK), a, HEARTS);
     drawcard(d, mkcard(HEARTS, JACK), b, HEARTS);
 }

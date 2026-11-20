@@ -105,6 +105,41 @@ if(WIN32)
   target_link_options(euchre PRIVATE -static)
 endif()
 
+if(EMSCRIPTEN)
+  # The PWA: index.{html,js,wasm} beside the manifest, icons and a service
+  # worker whose cache name is stamped with a hash of the wasm.
+  set(EUCHRE_WEB ${PROJECT_SOURCE_DIR}/web)
+  set(EUCHRE_WEB_FILES
+    ${EUCHRE_WEB}/manifest.webmanifest
+    ${EUCHRE_WEB}/icon-192.png
+    ${EUCHRE_WEB}/icon-512.png
+    ${EUCHRE_WEB}/icon-maskable-512.png)
+  set_target_properties(euchre PROPERTIES OUTPUT_NAME index SUFFIX .html)
+  target_link_options(euchre PRIVATE
+    -sALLOW_MEMORY_GROWTH=1
+    -sSTACK_SIZE=1MB
+    -sENVIRONMENT=web
+    -sMINIFY_HTML=0  # Debian's emscripten lacks the minifier
+    "SHELL:--shell-file ${EUCHRE_WEB}/shell.html")
+  set_property(TARGET euchre APPEND PROPERTY LINK_DEPENDS ${EUCHRE_WEB}/shell.html)
+  add_custom_command(TARGET euchre POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${EUCHRE_WEB_FILES}
+            $<TARGET_FILE_DIR:euchre>
+    COMMAND ${CMAKE_COMMAND}
+            -DSW_IN=${EUCHRE_WEB}/sw.js
+            -DWASM=$<TARGET_FILE_DIR:euchre>/index.wasm
+            -DOUT=$<TARGET_FILE_DIR:euchre>/sw.js
+            -P ${PROJECT_SOURCE_DIR}/cmake/stamp_sw.cmake
+    VERBATIM)
+  install(FILES
+    $<TARGET_FILE:euchre>
+    $<TARGET_FILE_DIR:euchre>/index.js
+    $<TARGET_FILE_DIR:euchre>/index.wasm
+    $<TARGET_FILE_DIR:euchre>/sw.js
+    ${EUCHRE_WEB_FILES}
+    DESTINATION .)
+endif()
+
 if(APPLE)
   set_target_properties(euchre PROPERTIES
     MACOSX_BUNDLE_BUNDLE_NAME          "Euchre"

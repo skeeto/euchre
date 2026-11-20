@@ -144,7 +144,7 @@ static void menupanel(Draw *d, App *a)
         ID_CLOSE, ID_NEWGAME, ID_PLAYERS, ID_RULES, ID_SOUND, ID_SPEED,
         ID_HELP, ID_STATS, ID_QUIT,
     };
-    i32  n   = countof(ids);
+    i32  n   = countof(ids) - (a->opt.noquit ? 1 : 0);
     f32  bh  = L->btnh*0.85f;
     f32  gap = L->pad*0.6f;
     f32  hu  = ((bh + gap)*(f32)n + L->pad*3) / L->k;
@@ -567,14 +567,14 @@ static Mesh apprender(App *a, View v, i64 now)
 }
 
 // The program's icon at size pixels.
-static Mesh iconmesh(App *a, f32 size, i64 now)
+static Mesh iconmesh(App *a, f32 size, b32 maskable, i64 now)
 {
     a->now  = now;
     Arena f = a->frame;
     Mesh  m = newmesh(&f, (iz)1 << 17);
     startframe(a);
     Draw  d = newdraw(a, &m);
-    drawicon(&d, size);
+    drawicon(&d, size, maskable);
     finishframe(a);
     return m;
 }

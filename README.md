@@ -7,9 +7,10 @@ cards and solves every deal exactly. It saves after every move, so close
 it any time, or pull the plug, and it picks up exactly where you were.
 
 The table lays itself out for wide windows and tall ones alike, from a
-phone held upright to an ultrawide monitor, so the same code can become
-a web app (PWA) later. Everything is drawn as shapes, and sound effects
-are synthesized at startup: the only assets are an embedded font.
+phone held upright to an ultrawide monitor, and the same code runs as a
+desktop program and as an installable web app (PWA) that works offline.
+Everything is drawn as shapes, and sound effects are synthesized at
+startup: the only assets are an embedded font.
 
 See [docs/rules.md](docs/rules.md) for the rules as played, the options,
 and how each level plays.
@@ -35,6 +36,27 @@ Tests, and tools for measuring the computer players:
 The save loader has an AFL++ harness, `src/main_fuzz.cpp`; its header
 says how to build and run it.
 
+### Web
+
+The web build uses Emscripten (3.1.69 or later, whose clang has
+`#embed`) and the same SDL3, built from source:
+
+    $ emcmake cmake -B build-web
+    $ cmake --build build-web
+    $ cmake --install build-web --prefix dist
+
+`dist/` is then the complete site: `index.html`, `index.js`,
+`index.wasm`, the manifest, icons, and a service worker whose cache name
+is a hash of the wasm, so each release replaces the last. Serve it over
+HTTPS (or from localhost) for the service worker and installation:
+
+    $ python3 -m http.server -d dist
+
+On the web the game saves to the page's localStorage, the canvas fills
+the page, and the page's CSS supplies a phone's safe-area insets. The
+web icons in `web/` are drawn by the game: `--png 192 web/icon-192.png`,
+`--png 512 web/icon-512.png`, and `--png 512m web/icon-maskable-512.png`.
+
 ## Playing
 
 - Bid with the buttons above your hand; toggle **Alone** before bidding
@@ -51,7 +73,8 @@ says how to build and run it.
 Developer options: `--save FILE`, `--seed N`, `--autoplay`, and
 `--shot WxH[@SCALE] FILE` to render a BMP headlessly once the table
 settles, with `--until PHASE` and `--open PANEL` (see `src/main_sdl.cpp`).
-`--icon assets/euchre.ico` regenerates the Windows icon.
+`--icon assets/euchre.ico` regenerates the Windows icon, and `--png`
+the web icons.
 
 ## Code
 
