@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#083824">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Euchre">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon-192.png">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <title>Euchre</title>
+  <style>
+    /* SDL doesn't report a phone's notch or home bar on the web, so the
+       game reads these through getComputedStyle (see windowview in
+       main_sdl.cpp). They're non-zero only with viewport-fit=cover. */
+    :root {
+      --sai-top:    env(safe-area-inset-top);
+      --sai-right:  env(safe-area-inset-right);
+      --sai-bottom: env(safe-area-inset-bottom);
+      --sai-left:   env(safe-area-inset-left);
+    }
+    html, body {
+      margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
+      background: #083824;
+      overscroll-behavior: none;
+      touch-action: none;
+      -webkit-user-select: none; user-select: none;
+      -webkit-touch-callout: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    canvas#canvas { display: block; outline: none; touch-action: none; }
+    #status { position: fixed; inset: 0; display: flex; align-items: center;
+              justify-content: center; color: #cfe3d8;
+              font: 18px system-ui, sans-serif; }
+  </style>
+</head>
+<body>
+  <div id="status">Loading…</div>
+  <canvas id="canvas" tabindex="-1" oncontextmenu="event.preventDefault()"></canvas>
+  <script>
+    var Module = {
+      canvas: document.getElementById('canvas'),
+      onAbort: function () {
+        var s = document.getElementById('status');
+        if (s) s.textContent = 'Euchre failed to start.';
+      },
+    };
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function () {
+        navigator.serviceWorker.register('sw.js').catch(function () {});
+      });
+    }
+  </script>
+  <script async type="text/javascript" src="index.js"></script>
+</body>
+</html>
