@@ -59,6 +59,10 @@ target_compile_options(euchre_flags INTERFACE
   -Wno-unused-parameter -Wno-unused-function
   -Wno-deprecated-enum-enum-conversion -Wno-deprecated-enum-float-conversion
 )
+check_cxx_compiler_flag(-Wdeprecated-anon-enum-enum-conversion EUCHRE_HAS_ANONENUM)
+if(EUCHRE_HAS_ANONENUM)  # clang's name for the same warning
+  target_compile_options(euchre_flags INTERFACE -Wno-deprecated-anon-enum-enum-conversion)
+endif()
 target_compile_definitions(euchre_flags INTERFACE APP_VERSION="${PROJECT_VERSION}")
 target_include_directories(euchre_flags SYSTEM INTERFACE ${stb_SOURCE_DIR})
 

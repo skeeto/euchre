@@ -95,6 +95,30 @@ int main(int argc, char **argv)
         if (a1 == "--bench") {
             return bench(t.perm);
         }
+        if (a1=="--seeds" && argc>=3) {
+            // Saves at many states, as a fuzzing corpus
+            i32 n = 0;
+            for (u64 seed = 1; seed <= 3; seed++) {
+                Saved s = {};
+                s.hasgame = 1;
+                newgame(&s.game, {}, seed);
+                for (i32 i = 0; s.game.phase!=PH_OVER && i<400; i++) {
+                    if (i%9 == 0) {
+                        Arena tmp = t.perm;
+                        Str   txt = savetext(&tmp, &s);
+                        char  path[512];
+                        snprintf(path, sizeof(path), "%s/save%03d.txt", argv[2], n++);
+                        FILE *f = fopen(path, "wb");
+                        if (f) {
+                            fwrite(txt.data, 1, (uz)txt.len, f);
+                            fclose(f);
+                        }
+                    }
+                    playmove(&s.game, t.perm);
+                }
+            }
+            return 0;
+        }
     }
 
     test_rules(&t);

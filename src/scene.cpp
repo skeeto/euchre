@@ -124,12 +124,11 @@ static Target placeof(App *a, i32 c)
             }
             return t;
         }
-        t.p   = deckplace(a);
-        i32 k = popcount(g->kitty & (bit(c)-1));
-        t.p.x += (f32)k*L->bw*0.03f;
-        t.p.y += (f32)k*L->bw*0.03f;
-        t.p.w *= 0.9f;
-        t.z   = 40 + k;
+        // Set aside by the dealer once trump is made, out of the way
+        t.p = deckplace(a);
+        t.p.w    *= 0.7f;
+        t.p.alpha = 0;
+        t.z       = 40;
         return t;
     }
 
@@ -324,7 +323,7 @@ static void bubble(Draw *d, App *a, i32 seat, Str s)
     Rect    r;
     i32     side;  // where the bubble sits: 0 above, 1 right, 2 below, 3 left
     if (L->tall) {
-        static i32 const sides[] = {0, 2, 2, 2};
+        static i32 const sides[] = {0, 0, 2, 0};
         side = sides[seat];
         if (seat == NORTH) side = 3;
     } else {
@@ -436,10 +435,10 @@ static void scorepanel(Draw *d, App *a)
     Arena t = a->ftmp;
     for (i32 team = 0; team < 2; team++) {
         Rect row = {in.x, in.y + rowh*(f32)team, in.w, rowh};
-        textleft(d, {row.x, row.y, row.w*0.34f, row.h}, L->tlabel, cols[team], names[team]);
+        textleft(d, {row.x, row.y, row.w*0.35f, row.h}, L->tlabel, cols[team], names[team]);
         Buf b(&t, 8);
         print(&b, (i64)g->score[team]);
-        textleft(d, {row.x + row.w*0.36f, row.y, row.w*0.16f, row.h}, L->ttitle*0.8f, INK, finish(&b));
+        textleft(d, {row.x + row.w*0.40f, row.y, row.w*0.14f, row.h}, L->ttitle*0.8f, INK, finish(&b));
         // Pips toward the target
         i32 n   = g->rules.target;
         f32 x0  = row.x + row.w*0.54f;
